@@ -18,11 +18,20 @@ function AESECB!(ciphertext, plaintext, key::AbstractAESKey, cache::AbstractAESC
 	end
 	iters = Int((len + pad) / 16)
 	ciphertextblock = AESBlock(ciphertext)
-	
-	Threads.@threads for i in 1:iters
-		AESEncryptBlock!(ciphertextblock, ciphertextblock, key, cache)
-		increment!(ciphertextblock)
+
+	loop_granularity = 1000
+	Threads.@threads for i in 1:convert(Int, ceil(iters / loop_granularity))
+		for j in ((i - 1) * loop_granularity + 1):(min(i * loop_granularity, iters))
+			# AESEncryptBlock!(ciphertextblock, ciphertextblock, key, cache)
+			# increment!(ciphertextblock)
+			AESEncryptBlock2!(ciphertextblock, key, cache, j)
+		end
 	end
+
+	# Threads.@threads for i in 1:iters
+	# 	AESEncryptBlock!(ciphertextblock, ciphertextblock, key, cache)
+	# 	increment!(ciphertextblock)
+	# end
 	ciphertext
 end
 

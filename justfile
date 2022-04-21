@@ -1,4 +1,4 @@
-julia := "julia --threads 2 --project=."
+julia := "julia --threads 1 --project=."
 
 install:
     {{julia}} -e "import Pkg; Pkg.instantiate()"

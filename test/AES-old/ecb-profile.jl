@@ -54,7 +54,7 @@ end
 
 
 plaintext = "A"
-while length(plaintext) < 2^20
+while length(plaintext) < 2^26
 	global plaintext
 	plaintext = plaintext * plaintext
 end
