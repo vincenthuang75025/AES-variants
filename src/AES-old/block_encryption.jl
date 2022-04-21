@@ -120,6 +120,96 @@ function AESEncryptBlock!(
     current
 end
 
+function AESEncryptBlock2!(
+    result::Union{Array{UInt8,1},SubArray{UInt8},B},
+    key::AES128Key,
+    cache::CipherCache,
+    index
+) where {B<:AESBlock}
+    current = result
+    K = cache.K
+    tmp = cache.tmp
+    u = 16*(index-1)
+
+    # Copy Key
+    for i = 1:4
+        for j = 1:4
+            K[i][j] = key[4i+j-4]
+        end
+    end
+    # Start Rounds
+    for i = 1:11
+        if i > 1
+            #GenRoundKey
+            copyto!(tmp, K[4])
+            for j = 1:4
+                tmp[j] = SBOX[tmp[j]+1]
+            end
+            tmp1 = tmp[1]
+            tmp[1] = tmp[2]
+            tmp[2] = tmp[3]
+            tmp[3] = tmp[4]
+            tmp[4] = tmp1
+            K[1] .= K[1] .⊻ tmp
+            K[1][1] = K[1][1] ⊻ RCON[i-1]
+            K[2] .= K[2] .⊻ K[1]
+            K[3] .= K[3] .⊻ K[2]
+            K[4] .= K[4] .⊻ K[3]
+            # SubBytes
+            for j = 1:16
+                current[u+j] = SBOX[current[u+j]+1]
+            end
+            # ShiftRows
+            tmp1 = current[u+2]
+            current[u+2] = current[u+6]
+            current[u+6] = current[u+10]
+            current[u+10] = current[u+14]
+            current[u+14] = tmp1
+
+            tmp1 = current[u+3]
+            current[u+3] = current[u+11]
+            current[u+11] = tmp1
+            tmp1 = current[u+7]
+            current[u+7] = current[u+15]
+            current[u+15] = tmp1
+
+            tmp1 = current[u+16]
+            current[u+16] = current[u+12]
+            current[u+12] = current[u+8]
+            current[u+8] = current[u+4]
+            current[u+4] = tmp1
+            # MixColumns
+            if i != 11
+                for j = 1:4
+                    tmp[1] =
+                        aes_mul(current[u+4j-3], 0x2) ⊻ aes_mul(current[u+4j-2], 0x3) ⊻
+                        aes_mul(current[u+4j-1], 0x1) ⊻ aes_mul(current[u+4j], 0x1)
+                    tmp[2] =
+                        aes_mul(current[u+4j-3], 0x1) ⊻ aes_mul(current[u+4j-2], 0x2) ⊻
+                        aes_mul(current[u+4j-1], 0x3) ⊻ aes_mul(current[u+4j], 0x1)
+                    tmp[3] =
+                        aes_mul(current[u+4j-3], 0x1) ⊻ aes_mul(current[u+4j-2], 0x1) ⊻
+                        aes_mul(current[u+4j-1], 0x2) ⊻ aes_mul(current[u+4j], 0x3)
+                    tmp[4] =
+                        aes_mul(current[u+4j-3], 0x3) ⊻ aes_mul(current[u+4j-2], 0x1) ⊻
+                        aes_mul(current[u+4j-1], 0x1) ⊻ aes_mul(current[u+4j], 0x2)
+                    current[u+4j-3] = tmp[1]
+                    current[u+4j-2] = tmp[2]
+                    current[u+4j-1] = tmp[3]
+                    current[u+4j] = tmp[4]
+                end
+            end
+        end
+        # AddRoundKey
+        for j = 1:4
+            for k = 1:4
+                current[u+4j+k-4] = current[u+4j+k-4] ⊻ K[j][k]
+            end
+        end
+    end
+    current
+end
+
 function AESEncryptBlock!(
     result::Union{Array{UInt8,1},SubArray{UInt8},B},
     block::Union{Array{UInt8,1},SubArray{UInt8},B},

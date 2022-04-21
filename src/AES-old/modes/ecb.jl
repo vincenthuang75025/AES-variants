@@ -1,3 +1,4 @@
+using BenchmarkTools
 
 function AESECB(plaintext, key::AbstractAESKey, cache::AbstractAESCache)
 	len = length(plaintext)
@@ -17,7 +18,8 @@ function AESECB!(ciphertext, plaintext, key::AbstractAESKey, cache::AbstractAESC
 	end
 	iters = Int((len + pad) / 16)
 	ciphertextblock = AESBlock(ciphertext)
-	for i in 1:iters
+	
+	Threads.@threads for i in 1:iters
 		AESEncryptBlock!(ciphertextblock, ciphertextblock, key, cache)
 		increment!(ciphertextblock)
 	end

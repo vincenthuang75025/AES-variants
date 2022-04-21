@@ -1,4 +1,4 @@
-julia := "julia --project=."
+julia := "julia --threads 2 --project=."
 
 install:
     {{julia}} -e "import Pkg; Pkg.instantiate()"
@@ -17,3 +17,9 @@ check:
 
 test:
     {{julia}} -e "import Pkg; Pkg.test()";
+
+ecb-profile:
+    {{julia}} test/AES-old/ecb-profile.jl;
+
+add-package:
+    {{julia}} -e "import Pkg; Pkg.add(\"NAME\")";
