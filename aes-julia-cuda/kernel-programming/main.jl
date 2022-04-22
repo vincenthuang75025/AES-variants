@@ -80,6 +80,81 @@ function AESParameters(key::CuArray{UInt8, 1})
 	return (Nk, Nr)
 end
 
+
+function AESEncrypt(o::CuDeviceVector{UInt8, 1}, plain::CuDeviceVector{UInt8, 1}, key::CuDeviceVector{UInt8, 1}, begin_ind::Int, end_ind::Int, Nk::Int, Nr::Int, w::CuDeviceVector{UInt8, 1})
+	# (w, Nr) = AEScrypt(plain, key, Nk, Nr)
+	# Nr is solved; still need to get w
+
+	# return AESCipher(plain, w, Nr)
+    return plain
+end
+
+function AESDecrypt(o::CuDeviceVector{UInt8, 1}, cipher::CuDeviceVector{UInt8, 1}, key::CuDeviceVector{UInt8, 1}, begin_ind::Int, end_ind::Int, Nk::Int, Nr::Int, w::CuDeviceVector{UInt8, 1})
+	# (w, Nr) = AEScrypt(cipher, key, Nk, Nr)
+	# return AESInvCipher(cipher, w, Nr)
+	return cipher
+end
+
+function AEScrypt(input::CuArray{UInt8, 1}, key::CuArray{UInt8, 1}, Nk::Int, Nr::Int)
+	if length(input) != (WORDLENGTH * Nb)
+		error("input must be a 16-byte block!")
+	end
+	# (Nk, Nr) = AESParameters(key)
+	# w = KeyExpansion(key, Nk, Nr)
+	return (w, Nr)
+end
+
+function KeyExpansion!(w::CuArray{UInt8, 1}, key::CuArray{UInt8, 1}, Nk::Int, Nr::Int)
+	@assert(length(key) == (WORDLENGTH * Nk))
+
+	w[1:(WORDLENGTH * Nk)] = copy(key)
+	i = Nk
+
+	while i < (Nb * (Nr + 1))
+		temp = w[((i - 1) * WORDLENGTH + 1):(i * WORDLENGTH)]
+		if mod(i, Nk) == 0
+			temp = xor.(SubWord(RotWord(temp)), Rcon(div(i, Nk)))
+			# temp = xor.(SubWord(RotWord(temp)) , Rcon(div(i, Nk)))
+		elseif (Nk > 6) && (mod(i, Nk) == Nb)
+			temp = SubWord(temp)
+		end
+		w[(i * WORDLENGTH + 1):((i + 1) * WORDLENGTH)] = xor.(w[((i - Nk) * WORDLENGTH + 1):((i - Nk + 1) * WORDLENGTH)] , temp)
+		i += 1
+	end
+
+	return nothing
+end
+
+function SubWord(w::CuArray{UInt8, 1})
+	@assert(length(w) == WORDLENGTH)
+	# map!(x -> SBOX[Int(x) + 1], w, w)
+	# return w
+	# for i=1:length(w)
+	# 	w[i] = 1
+	# end
+	return w
+end
+
+function RotWord(w::CuArray{UInt8, 1})
+	@assert(length(w) == WORDLENGTH)
+	tmp = w[1]
+	w[1] = w[2]
+	w[2] = w[3]
+	w[3] = w[4]
+	w[4] = tmp
+    return w
+	# permute!(w, [2, 3, 4, 1])
+end
+
+function Rcon(i::Int)
+	@assert(i > 0)
+	x = 0x01
+	for j=1:(i-1)
+		x = gmul(x, 0x02)
+	end
+	return [x, 0x00, 0x00, 0x00]
+end
+
 ####################### MODES #######################
 
 global const BLOCK_BYTES = (Nb * WORDLENGTH)
@@ -100,18 +175,23 @@ function AESECB(blocks::String, key::String, encrypt::Bool)
 end
 
 function AESECB(blocks::CuArray{UInt8, 1}, key::CuArray{UInt8, 1}, encrypt::Bool)
-    noBlocks = CUDA.allowscalar() do
-        return noBlocks = paddedCheck(blocks, key)
+    noBlocks, Nk, Nr = CUDA.allowscalar() do
+        return paddedCheck(blocks, key)
     end
-	o = CuArray{UInt8}(undef, length(blocks))
+	w = CuArray{UInt8, 1}(undef, WORDLENGTH * Nb * (Nr + 1))
+	CUDA.allowscalar() do
+		KeyExpansion!(w, key, Nk, Nr)
+	end
+	
+	o = CuArray{UInt8, 1}(undef, length(blocks))
 
     # hardcode threads: TODO fix later
-    @cuda threads=256 AESECB_do_blocks!(cudaconvert(o), noBlocks, cudaconvert(blocks), cudaconvert(key), encrypt)
+    @cuda threads=256 AESECB_do_blocks!(cudaconvert(o), noBlocks, cudaconvert(blocks), cudaconvert(key), encrypt, Nk, Nr, cudaconvert(w))
 
 	return o
 end
 
-function AESECB_do_blocks!(o::CuDeviceVector{UInt8, 1}, noBlocks::Int, blocks::CuDeviceVector{UInt8, 1}, key::CuDeviceVector{UInt8, 1}, encrypt::Bool)
+function AESECB_do_blocks!(o::CuDeviceVector{UInt8, 1}, noBlocks::Int, blocks::CuDeviceVector{UInt8, 1}, key::CuDeviceVector{UInt8, 1}, encrypt::Bool, Nk::Int, Nr::Int, w::CuDeviceVector{UInt8, 1})
     index = threadIdx().x    # this example only requires linear indexing, so just use `x`
     stride = blockDim().x
     for i=index:stride:noBlocks
@@ -119,10 +199,11 @@ function AESECB_do_blocks!(o::CuDeviceVector{UInt8, 1}, noBlocks::Int, blocks::C
 		indices_begin = (i - 1) * BLOCK_BYTES + 1
 		indices_end = min(i * BLOCK_BYTES, length(blocks))
 		@assert(indices_end - indices_begin <= 16)
-		for j=indices_begin:1:indices_end
-			# o[indices] = encrypt ? AESEncrypt(blocks[indices], key) : AESDecrypt(blocks[indices], key)
-			o[j] = 1
-		end
+		encrypt ? AESEncrypt(o, blocks, key, indices_begin, indices_end, Nk, Nr, w) : AESDecrypt(o, blocks, key, indices_begin, indices_end, Nk, Nr, w)
+		# for j=indices_begin:1:indices_end
+		# 	# o[indices] = encrypt ? AESEncrypt(blocks[indices], key) : AESDecrypt(blocks[indices], key)
+		# 	o[j] = 1
+		# end
 	end
     return nothing
 end
@@ -134,8 +215,8 @@ function paddedCheck(blocks::CuArray{UInt8, 1}, key::CuArray{UInt8, 1})
 		"16!")
 	end
 	# Check if key is OK
-	AESParameters(key)
-	return noBlocks
+	Nk, Nr = AESParameters(key)
+	return noBlocks, Nk, Nr
 end
 
 # function blockIndices(blocks::CuArray{UInt8, 1}, blockNumber::Int)
@@ -153,4 +234,3 @@ end
 
 CUDA.allowscalar(false)
 @btime AESECB(plaintext, key, true)
-
