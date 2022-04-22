@@ -2,6 +2,8 @@ using BenchmarkTools
 using CUDA
 using Test
 
+include("galois-field.jl")
+
 ###################### CODE ####################
 
 global const Nks = CuArray([4, 6, 8])
@@ -80,11 +82,30 @@ function AESParameters(key::CuArray{UInt8, 1})
 	return (Nk, Nr)
 end
 
+# function AESCipher(inBytes::CuArray{UInt8, 1}, w::CuArray{UInt8, 1}, Nr::Int)
+# 	@assert(WORDLENGTH == Nb)
+# 	@assert(length(inBytes) == (WORDLENGTH * Nb))
+# 	@assert(length(w) == (WORDLENGTH * Nb * (Nr + 1)))
+
+# 	state = copy(inBytes)
+# 	AddRoundKey(state, w[1:(Nb * WORDLENGTH)])
+
+# 	for round=1:(Nr-1)
+# 		SubBytes(state)
+# 		ShiftRows(state)
+# 		MixColumns(state)
+# 		AddRoundKey(state, w[(round * Nb * WORDLENGTH + 1):((round + 1) * Nb * WORDLENGTH)])
+# 	end
+
+# 	SubBytes(state)
+# 	ShiftRows(state)
+# 	AddRoundKey(state, w[(Nr * Nb * WORDLENGTH + 1):((Nr + 1) * Nb * WORDLENGTH)])
+
+# 	return state
+# end
 
 function AESEncrypt(o::CuDeviceVector{UInt8, 1}, plain::CuDeviceVector{UInt8, 1}, key::CuDeviceVector{UInt8, 1}, begin_ind::Int, end_ind::Int, Nk::Int, Nr::Int, w::CuDeviceVector{UInt8, 1})
-	# (w, Nr) = AEScrypt(plain, key, Nk, Nr)
-	# Nr is solved; still need to get w
-
+	# slice the block and then do AESCipher
 	# return AESCipher(plain, w, Nr)
     return plain
 end
@@ -95,14 +116,14 @@ function AESDecrypt(o::CuDeviceVector{UInt8, 1}, cipher::CuDeviceVector{UInt8, 1
 	return cipher
 end
 
-function AEScrypt(input::CuArray{UInt8, 1}, key::CuArray{UInt8, 1}, Nk::Int, Nr::Int)
-	if length(input) != (WORDLENGTH * Nb)
-		error("input must be a 16-byte block!")
-	end
-	# (Nk, Nr) = AESParameters(key)
-	# w = KeyExpansion(key, Nk, Nr)
-	return (w, Nr)
-end
+# function AEScrypt(input::CuArray{UInt8, 1}, key::CuArray{UInt8, 1}, Nk::Int, Nr::Int)
+# 	if length(input) != (WORDLENGTH * Nb)
+# 		error("input must be a 16-byte block!")
+# 	end
+# 	# (Nk, Nr) = AESParameters(key)
+# 	# w = KeyExpansion(key, Nk, Nr)
+# 	return (w, Nr)
+# end
 
 function KeyExpansion!(w::CuArray{UInt8, 1}, key::CuArray{UInt8, 1}, Nk::Int, Nr::Int)
 	@assert(length(key) == (WORDLENGTH * Nk))
@@ -114,7 +135,6 @@ function KeyExpansion!(w::CuArray{UInt8, 1}, key::CuArray{UInt8, 1}, Nk::Int, Nr
 		temp = w[((i - 1) * WORDLENGTH + 1):(i * WORDLENGTH)]
 		if mod(i, Nk) == 0
 			temp = xor.(SubWord(RotWord(temp)), Rcon(div(i, Nk)))
-			# temp = xor.(SubWord(RotWord(temp)) , Rcon(div(i, Nk)))
 		elseif (Nk > 6) && (mod(i, Nk) == Nb)
 			temp = SubWord(temp)
 		end
@@ -129,9 +149,9 @@ function SubWord(w::CuArray{UInt8, 1})
 	@assert(length(w) == WORDLENGTH)
 	# map!(x -> SBOX[Int(x) + 1], w, w)
 	# return w
-	# for i=1:length(w)
-	# 	w[i] = 1
-	# end
+	for i=1:length(w)
+		w[i] = SBOX[Int(w[i]) + 1]
+	end
 	return w
 end
 
@@ -152,7 +172,7 @@ function Rcon(i::Int)
 	for j=1:(i-1)
 		x = gmul(x, 0x02)
 	end
-	return [x, 0x00, 0x00, 0x00]
+	return CuArray([x, 0x00, 0x00, 0x00])
 end
 
 ####################### MODES #######################
