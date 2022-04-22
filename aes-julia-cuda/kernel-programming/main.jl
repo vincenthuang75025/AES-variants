@@ -30,6 +30,7 @@ global const SBOX = CuArray([
 0xe1, 0xf8, 0x98, 0x11, 0x69, 0xd9, 0x8e, 0x94, 0x9b, 0x1e, 0x87, 0xe9, 0xce, 0x55, 0x28, 0xdf,
 0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16
 ])
+global const SBOX_CuDeviceVector = cudaconvert(SBOX)
 
 global const INVSBOX = CuArray([
 0x52, 0x09, 0x6a, 0xd5, 0x30, 0x36, 0xa5, 0x38, 0xbf, 0x40, 0xa3, 0x9e, 0x81, 0xf3, 0xd7, 0xfb,
@@ -50,19 +51,19 @@ global const INVSBOX = CuArray([
 0x17, 0x2b, 0x04, 0x7e, 0xba, 0x77, 0xd6, 0x26, 0xe1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0c, 0x7d
 ])
 
-global const MIXCOLUMNSMATRIX = CuArray([
+global const MIXCOLUMNSMATRIX = cudaconvert(CuArray([
 0x02, 0x03, 0x01, 0x01,
 0x01, 0x02, 0x03, 0x01,
 0x01, 0x01, 0x02, 0x03,
 0x03, 0x01, 0x01, 0x02
-])
+]))
 
-global const INVMIXCOLUMNSMATRIX = CuArray([
+global const INVMIXCOLUMNSMATRIX = cudaconvert(CuArray([
 0x0e, 0x0b, 0x0d, 0x09,
 0x09, 0x0e, 0x0b, 0x0d,
 0x0d, 0x09, 0x0e, 0x0b,
 0x0b, 0x0d, 0x09, 0x0e
-])
+]))
 
 # Return a tuple (Nk, Nr) where Nk is the number of key blocks
 # and Nr is the number of rounds for the key size.
@@ -82,32 +83,119 @@ function AESParameters(key::CuArray{UInt8, 1})
 	return (Nk, Nr)
 end
 
-# function AESCipher(inBytes::CuArray{UInt8, 1}, w::CuArray{UInt8, 1}, Nr::Int)
-# 	@assert(WORDLENGTH == Nb)
-# 	@assert(length(inBytes) == (WORDLENGTH * Nb))
-# 	@assert(length(w) == (WORDLENGTH * Nb * (Nr + 1)))
+function AESCipher(o::CuDeviceVector{UInt8, 1}, plain::CuDeviceVector{UInt8, 1}, w::CuDeviceVector{UInt8, 1}, Nr::Int, begin_ind::Int, end_ind::Int)
+	@assert(WORDLENGTH == Nb)
+	@assert((end_ind - begin_ind + 1) == (WORDLENGTH * Nb))
+	@assert(length(w) == (WORDLENGTH * Nb * (Nr + 1)))
 
-# 	state = copy(inBytes)
-# 	AddRoundKey(state, w[1:(Nb * WORDLENGTH)])
+	# AddRoundKey
+	for i=begin_ind:end_ind
+		o[i] = gadd(plain[i], w[i - begin_ind + 1])
+	end
 
-# 	for round=1:(Nr-1)
-# 		SubBytes(state)
-# 		ShiftRows(state)
-# 		MixColumns(state)
-# 		AddRoundKey(state, w[(round * Nb * WORDLENGTH + 1):((round + 1) * Nb * WORDLENGTH)])
-# 	end
+	for round=1:(Nr-1)
+		# SubBytes
+		for i=begin_ind:end_ind
+			o[i] = SBOX_CuDeviceVector[Int(o[i]) + 1]
+		end
 
-# 	SubBytes(state)
-# 	ShiftRows(state)
-# 	AddRoundKey(state, w[(Nr * Nb * WORDLENGTH + 1):((Nr + 1) * Nb * WORDLENGTH)])
+		# ShiftRows: uh i'm not sure if this is correct
+		for r=2:Nb
+			step = r
+			cnt = 0
+			tmp = 0
+			for index=r:Nb:Nb*Nb
+				offset = index - 1
+				p = mod(cnt + step - 1, Nb) + 1
+				if cnt == 0
+					tmp = o[begin_ind + offset]
+				end
+				if p == r
+					o[begin_ind + offset] = tmp
+				else
+					o[begin_ind + offset] = o[begin_ind + (p - 1) * Nb]
+				end
+				cnt += 1
+			end
+		end
+
+ 		# MixColumns
+		# for c=1:Nb
+		# 	for r=1:Nb
+		# 		mi = MIXCOLUMNSMATRIX
+		# 	end
+		# 	for index=((c - 1) * Nb + 1):(c * Nb)
+
+		# 	end
+		# end
+
+
+
+ 		# AddRoundKey(state, w[(round * Nb * WORDLENGTH + 1):((round + 1) * Nb * WORDLENGTH)])
+		for i=begin_ind:end_ind
+			o[i] = gadd(plain[i], w[i - begin_ind + (round * Nb * WORDLENGTH + 1)])
+		end
+
+	end
+
+ 	# SubBytes(state)
+	for i=begin_ind:end_ind
+		o[i] = SBOX_CuDeviceVector[Int(o[i]) + 1]
+	end
+
+ 	# ShiftRows(state)
+	for r=2:Nb
+		step = r
+		cnt = 0
+		tmp = 0
+		for index=r:Nb:Nb*Nb
+			offset = index - 1
+			p = mod(cnt + step - 1, Nb) + 1
+			if cnt == 0
+				tmp = o[begin_ind + offset]
+			end
+			if p == r
+				o[begin_ind + offset] = tmp
+			else
+				o[begin_ind + offset] = o[begin_ind + (p - 1) * Nb]
+			end
+			cnt += 1
+		end
+	end
+
+ 	# AddRoundKey(state, w[(Nr * Nb * WORDLENGTH + 1):((Nr + 1) * Nb * WORDLENGTH)])
+	for i=begin_ind:end_ind
+		o[i] = gadd(plain[i], w[i - begin_ind + (Nr * Nb * WORDLENGTH + 1)])
+	end
 
 # 	return state
-# end
+end
+
+function MixColumnsGen(a::CuArray{UInt8, 1}, inv::Bool)
+	# note that columns are actually rows in memory
+	matrix = inv ? INVMIXCOLUMNSMATRIX : MIXCOLUMNSMATRIX
+	for c=1:Nb
+		indices = rowIndices(c)
+		ai = copy(a[indices])
+		@assert(length(ai) == Nb)
+		# Matrix multiplication with Galois field operations
+		for r=1:Nb
+			mi = matrix[rowIndices(r)]
+			a[indices[r]] = gadd(map(gmul, ai, mi))
+		end
+	end
+	return a
+end
+
+function rowIndices(row::Int)
+	return ((row - 1) * Nb + 1):(row * Nb)
+end
 
 function AESEncrypt(o::CuDeviceVector{UInt8, 1}, plain::CuDeviceVector{UInt8, 1}, key::CuDeviceVector{UInt8, 1}, begin_ind::Int, end_ind::Int, Nk::Int, Nr::Int, w::CuDeviceVector{UInt8, 1})
 	# slice the block and then do AESCipher
 	# return AESCipher(plain, w, Nr)
-    return plain
+    # return plain
+	AESCipher(o, plain, w, Nr, begin_ind, end_ind)
 end
 
 function AESDecrypt(o::CuDeviceVector{UInt8, 1}, cipher::CuDeviceVector{UInt8, 1}, key::CuDeviceVector{UInt8, 1}, begin_ind::Int, end_ind::Int, Nk::Int, Nr::Int, w::CuDeviceVector{UInt8, 1})
@@ -115,15 +203,6 @@ function AESDecrypt(o::CuDeviceVector{UInt8, 1}, cipher::CuDeviceVector{UInt8, 1
 	# return AESInvCipher(cipher, w, Nr)
 	return cipher
 end
-
-# function AEScrypt(input::CuArray{UInt8, 1}, key::CuArray{UInt8, 1}, Nk::Int, Nr::Int)
-# 	if length(input) != (WORDLENGTH * Nb)
-# 		error("input must be a 16-byte block!")
-# 	end
-# 	# (Nk, Nr) = AESParameters(key)
-# 	# w = KeyExpansion(key, Nk, Nr)
-# 	return (w, Nr)
-# end
 
 function KeyExpansion!(w::CuArray{UInt8, 1}, key::CuArray{UInt8, 1}, Nk::Int, Nr::Int)
 	@assert(length(key) == (WORDLENGTH * Nk))
@@ -180,8 +259,6 @@ end
 global const BLOCK_BYTES = (Nb * WORDLENGTH)
 
 function AESECB(blocks::String, key::String, encrypt::Bool)
-    # bytes2hex(AESECB(CuArray(hex2bytes(blocks)), CuArray(hex2bytes(key)), encrypt))
-    #  involve a CPU operation: TODO add back later
     blocks_cuarray, key_cuarray = CUDA.allowscalar() do
         blocks_cuarray = CuArray(hex2bytes(blocks))
         key_cuarray = CuArray(hex2bytes(key))
@@ -212,7 +289,7 @@ function AESECB(blocks::CuArray{UInt8, 1}, key::CuArray{UInt8, 1}, encrypt::Bool
 end
 
 function AESECB_do_blocks!(o::CuDeviceVector{UInt8, 1}, noBlocks::Int, blocks::CuDeviceVector{UInt8, 1}, key::CuDeviceVector{UInt8, 1}, encrypt::Bool, Nk::Int, Nr::Int, w::CuDeviceVector{UInt8, 1})
-    index = threadIdx().x    # this example only requires linear indexing, so just use `x`
+    index = threadIdx().x    
     stride = blockDim().x
     for i=index:stride:noBlocks
 		@assert(i >= 1)
@@ -220,10 +297,6 @@ function AESECB_do_blocks!(o::CuDeviceVector{UInt8, 1}, noBlocks::Int, blocks::C
 		indices_end = min(i * BLOCK_BYTES, length(blocks))
 		@assert(indices_end - indices_begin <= 16)
 		encrypt ? AESEncrypt(o, blocks, key, indices_begin, indices_end, Nk, Nr, w) : AESDecrypt(o, blocks, key, indices_begin, indices_end, Nk, Nr, w)
-		# for j=indices_begin:1:indices_end
-		# 	# o[indices] = encrypt ? AESEncrypt(blocks[indices], key) : AESDecrypt(blocks[indices], key)
-		# 	o[j] = 1
-		# end
 	end
     return nothing
 end
