@@ -1,5 +1,6 @@
 using BenchmarkTools
 using CUDA
+using Test
 
 ###################### CODE ####################
 
@@ -105,18 +106,23 @@ function AESECB(blocks::CuArray{UInt8, 1}, key::CuArray{UInt8, 1}, encrypt::Bool
 	o = CuArray{UInt8}(undef, length(blocks))
 
     # hardcode threads: TODO fix later
-    # @cuda threads=noBlocks AESECB_do_blocks!(o, noBlocks, blocks, key, encrypt)
+    @cuda threads=256 AESECB_do_blocks!(cudaconvert(o), noBlocks, cudaconvert(blocks), cudaconvert(key), encrypt)
 
 	return o
 end
 
-function AESECB_do_blocks!(o::CuArray{UInt8, 1}, noBlocks::Int, blocks::CuArray{UInt8, 1}, key::CuArray{UInt8, 1}, encrypt::Bool)
+function AESECB_do_blocks!(o::CuDeviceVector{UInt8, 1}, noBlocks::Int, blocks::CuDeviceVector{UInt8, 1}, key::CuDeviceVector{UInt8, 1}, encrypt::Bool)
     index = threadIdx().x    # this example only requires linear indexing, so just use `x`
     stride = blockDim().x
     for i=index:stride:noBlocks
-		indices = blockIndices(blocks, i)
-		# o[indices] = encrypt ? AESEncrypt(blocks[indices], key) : AESDecrypt(blocks[indices], key)
-        o[indices] = 1
+		@assert(i >= 1)
+		indices_begin = (i - 1) * BLOCK_BYTES + 1
+		indices_end = min(i * BLOCK_BYTES, length(blocks))
+		@assert(indices_end - indices_begin <= 16)
+		for j=indices_begin:1:indices_end
+			# o[indices] = encrypt ? AESEncrypt(blocks[indices], key) : AESDecrypt(blocks[indices], key)
+			o[j] = 1
+		end
 	end
     return nothing
 end
@@ -132,10 +138,10 @@ function paddedCheck(blocks::CuArray{UInt8, 1}, key::CuArray{UInt8, 1})
 	return noBlocks
 end
 
-function blockIndices(blocks::CuArray{UInt8, 1}, blockNumber::Int)
-	@assert(blockNumber >= 1)
-	((blockNumber - 1) * BLOCK_BYTES + 1):(min(blockNumber * BLOCK_BYTES, length(blocks)))
-end
+# function blockIndices(blocks::CuArray{UInt8, 1}, blockNumber::Int)
+# 	@assert(blockNumber >= 1)
+# 	((blockNumber - 1) * BLOCK_BYTES + 1):(min(blockNumber * BLOCK_BYTES, length(blocks)))
+# end
 
 ######################## DRIVER ##########################
 key = "2b7e151628aed2a6abf7158809cf4f3c"
