@@ -83,7 +83,7 @@ function AESParameters(key::CuArray{UInt8, 1})
 	return (Nk, Nr)
 end
 
-function AESCipher(o::CuDeviceVector{UInt8, 1}, plain::CuDeviceVector{UInt8, 1}, w::CuDeviceVector{UInt8, 1}, Nr::Int, begin_ind::Int, end_ind::Int)
+function AESCipher(o::CuDeviceVector{UInt8, 1}, plain::CuDeviceVector{UInt8, 1}, w::CuDeviceVector{UInt8, 1}, Nr::Int, begin_ind::Int, end_ind::Int, buffer::CuDeviceVector{UInt8, 1})
 	@assert(WORDLENGTH == Nb)
 	@assert((end_ind - begin_ind + 1) == (WORDLENGTH * Nb))
 	@assert(length(w) == (WORDLENGTH * Nb * (Nr + 1)))
@@ -120,16 +120,19 @@ function AESCipher(o::CuDeviceVector{UInt8, 1}, plain::CuDeviceVector{UInt8, 1},
 		end
 
  		# MixColumns
-		# for c=1:Nb
-		# 	for r=1:Nb
-		# 		mi = MIXCOLUMNSMATRIX
-		# 	end
-		# 	for index=((c - 1) * Nb + 1):(c * Nb)
-
-		# 	end
-		# end
-
-
+		for c=1:Nb
+			for index=((c - 1) * Nb + 1):(c * Nb)
+				offset = index - 1
+				buffer[begin_ind + offset] = o[begin_ind + offset]
+			end
+			for r=1:Nb
+				for j=((r - 1) * Nb + 1):(r * Nb)
+					mij = MIXCOLUMNSMATRIX[j]
+					indices_r = ((c - 1) * Nb + 1) + r - 1
+					o[begin_ind + indices_r - 1] += gmul2(buffer[begin_ind + ((c - 1) * Nb + 1) - 1], mij)
+				end
+			end
+		end
 
  		# AddRoundKey(state, w[(round * Nb * WORDLENGTH + 1):((round + 1) * Nb * WORDLENGTH)])
 		for i=begin_ind:end_ind
@@ -168,37 +171,13 @@ function AESCipher(o::CuDeviceVector{UInt8, 1}, plain::CuDeviceVector{UInt8, 1},
 		o[i] = gadd(plain[i], w[i - begin_ind + (Nr * Nb * WORDLENGTH + 1)])
 	end
 
-# 	return state
 end
 
-function MixColumnsGen(a::CuArray{UInt8, 1}, inv::Bool)
-	# note that columns are actually rows in memory
-	matrix = inv ? INVMIXCOLUMNSMATRIX : MIXCOLUMNSMATRIX
-	for c=1:Nb
-		indices = rowIndices(c)
-		ai = copy(a[indices])
-		@assert(length(ai) == Nb)
-		# Matrix multiplication with Galois field operations
-		for r=1:Nb
-			mi = matrix[rowIndices(r)]
-			a[indices[r]] = gadd(map(gmul, ai, mi))
-		end
-	end
-	return a
+function AESEncrypt(o::CuDeviceVector{UInt8, 1}, plain::CuDeviceVector{UInt8, 1}, key::CuDeviceVector{UInt8, 1}, begin_ind::Int, end_ind::Int, Nk::Int, Nr::Int, w::CuDeviceVector{UInt8, 1}, buffer::CuDeviceVector{UInt8, 1})
+	AESCipher(o, plain, w, Nr, begin_ind, end_ind, buffer)
 end
 
-function rowIndices(row::Int)
-	return ((row - 1) * Nb + 1):(row * Nb)
-end
-
-function AESEncrypt(o::CuDeviceVector{UInt8, 1}, plain::CuDeviceVector{UInt8, 1}, key::CuDeviceVector{UInt8, 1}, begin_ind::Int, end_ind::Int, Nk::Int, Nr::Int, w::CuDeviceVector{UInt8, 1})
-	# slice the block and then do AESCipher
-	# return AESCipher(plain, w, Nr)
-    # return plain
-	AESCipher(o, plain, w, Nr, begin_ind, end_ind)
-end
-
-function AESDecrypt(o::CuDeviceVector{UInt8, 1}, cipher::CuDeviceVector{UInt8, 1}, key::CuDeviceVector{UInt8, 1}, begin_ind::Int, end_ind::Int, Nk::Int, Nr::Int, w::CuDeviceVector{UInt8, 1})
+function AESDecrypt(o::CuDeviceVector{UInt8, 1}, cipher::CuDeviceVector{UInt8, 1}, key::CuDeviceVector{UInt8, 1}, begin_ind::Int, end_ind::Int, Nk::Int, Nr::Int, w::CuDeviceVector{UInt8, 1}, buffer::CuDeviceVector{UInt8, 1})
 	# (w, Nr) = AEScrypt(cipher, key, Nk, Nr)
 	# return AESInvCipher(cipher, w, Nr)
 	return cipher
@@ -236,13 +215,13 @@ end
 
 function RotWord(w::CuArray{UInt8, 1})
 	@assert(length(w) == WORDLENGTH)
+	# permute!(w, [2, 3, 4, 1])
 	tmp = w[1]
 	w[1] = w[2]
 	w[2] = w[3]
 	w[3] = w[4]
 	w[4] = tmp
     return w
-	# permute!(w, [2, 3, 4, 1])
 end
 
 function Rcon(i::Int)
@@ -265,10 +244,10 @@ function AESECB(blocks::String, key::String, encrypt::Bool)
         return blocks_cuarray, key_cuarray
     end
     cipher_cuarray = AESECB(blocks_cuarray, key_cuarray, encrypt)
-    # cipher = CUDA.allowscalar() do
-    #     return bytes2hex(cipher_cuarray)
-    # end
-    # return cipher
+    cipher = CUDA.allowscalar() do
+        return bytes2hex(cipher_cuarray)
+    end
+    return cipher
 end
 
 function AESECB(blocks::CuArray{UInt8, 1}, key::CuArray{UInt8, 1}, encrypt::Bool)
@@ -281,14 +260,15 @@ function AESECB(blocks::CuArray{UInt8, 1}, key::CuArray{UInt8, 1}, encrypt::Bool
 	end
 	
 	o = CuArray{UInt8, 1}(undef, length(blocks))
+	buffer = CuArray{UInt8, 1}(undef, length(blocks))
 
     # hardcode threads: TODO fix later
-    @cuda threads=256 AESECB_do_blocks!(cudaconvert(o), noBlocks, cudaconvert(blocks), cudaconvert(key), encrypt, Nk, Nr, cudaconvert(w))
+    @cuda threads=256 AESECB_do_blocks!(cudaconvert(o), noBlocks, cudaconvert(blocks), cudaconvert(key), encrypt, Nk, Nr, cudaconvert(w), cudaconvert(buffer))
 
 	return o
 end
 
-function AESECB_do_blocks!(o::CuDeviceVector{UInt8, 1}, noBlocks::Int, blocks::CuDeviceVector{UInt8, 1}, key::CuDeviceVector{UInt8, 1}, encrypt::Bool, Nk::Int, Nr::Int, w::CuDeviceVector{UInt8, 1})
+function AESECB_do_blocks!(o::CuDeviceVector{UInt8, 1}, noBlocks::Int, blocks::CuDeviceVector{UInt8, 1}, key::CuDeviceVector{UInt8, 1}, encrypt::Bool, Nk::Int, Nr::Int, w::CuDeviceVector{UInt8, 1}, buffer::CuDeviceVector{UInt8, 1})
     index = threadIdx().x    
     stride = blockDim().x
     for i=index:stride:noBlocks
@@ -296,7 +276,7 @@ function AESECB_do_blocks!(o::CuDeviceVector{UInt8, 1}, noBlocks::Int, blocks::C
 		indices_begin = (i - 1) * BLOCK_BYTES + 1
 		indices_end = min(i * BLOCK_BYTES, length(blocks))
 		@assert(indices_end - indices_begin <= 16)
-		encrypt ? AESEncrypt(o, blocks, key, indices_begin, indices_end, Nk, Nr, w) : AESDecrypt(o, blocks, key, indices_begin, indices_end, Nk, Nr, w)
+		encrypt ? AESEncrypt(o, blocks, key, indices_begin, indices_end, Nk, Nr, w, buffer) : AESDecrypt(o, blocks, key, indices_begin, indices_end, Nk, Nr, w, buffer)
 	end
     return nothing
 end
@@ -318,6 +298,7 @@ end
 # end
 
 ######################## DRIVER ##########################
+
 key = "2b7e151628aed2a6abf7158809cf4f3c"
 plaintext = "A"
 while length(plaintext) < 2^10
