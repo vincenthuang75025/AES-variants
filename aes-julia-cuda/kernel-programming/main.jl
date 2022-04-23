@@ -328,5 +328,11 @@ while length(plaintext) < 2^20
 end
 
 CUDA.allowscalar(false)
-@btime AESECB(plaintext, key, true)
+
+function bench_gpu(plaintext, key, encryption)
+    CUDA.@sync begin
+		AESECB(plaintext, key, encryption)
+	end
+end
+@btime bench_gpu(plaintext, key, true)
 # println(size(AESECB(plaintext, key, true)))
