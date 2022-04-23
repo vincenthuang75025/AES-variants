@@ -106,7 +106,7 @@ function AESCipher(o::CuDeviceVector{UInt8, 1}, plain::CuDeviceVector{UInt8, 1},
 			o[i] = SBOX_CuDeviceVector[Int(o[i]) + 1]
 		end
 
-		# ShiftRows: uh i'm not sure if this is correct
+		# ShiftRows
 		for r=2:Nb
 			step = r
 			cnt = 0
