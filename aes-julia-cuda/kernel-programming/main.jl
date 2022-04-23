@@ -88,9 +88,14 @@ function AESCipher(o::CuDeviceVector{UInt8, 1}, plain::CuDeviceVector{UInt8, 1},
 	@assert((end_ind - begin_ind + 1) == (WORDLENGTH * Nb))
 	@assert(length(w) == (WORDLENGTH * Nb * (Nr + 1)))
 
+	# Copy
+	for i=begin_ind:end_ind
+		o[i] = plain[i]
+	end
+
 	# AddRoundKey
 	for i=begin_ind:end_ind
-		o[i] = gadd(plain[i], w[i - begin_ind + 1])
+		o[i] = gadd(o[i], w[i - begin_ind + 1])
 	end
 
 	for round=1:(Nr-1)
@@ -136,7 +141,7 @@ function AESCipher(o::CuDeviceVector{UInt8, 1}, plain::CuDeviceVector{UInt8, 1},
 
  		# AddRoundKey(state, w[(round * Nb * WORDLENGTH + 1):((round + 1) * Nb * WORDLENGTH)])
 		for i=begin_ind:end_ind
-			o[i] = gadd(plain[i], w[i - begin_ind + (round * Nb * WORDLENGTH + 1)])
+			o[i] = gadd(o[i], w[i - begin_ind + (round * Nb * WORDLENGTH + 1)])
 		end
 
 	end
@@ -168,7 +173,7 @@ function AESCipher(o::CuDeviceVector{UInt8, 1}, plain::CuDeviceVector{UInt8, 1},
 
  	# AddRoundKey(state, w[(Nr * Nb * WORDLENGTH + 1):((Nr + 1) * Nb * WORDLENGTH)])
 	for i=begin_ind:end_ind
-		o[i] = gadd(plain[i], w[i - begin_ind + (Nr * Nb * WORDLENGTH + 1)])
+		o[i] = gadd(o[i], w[i - begin_ind + (Nr * Nb * WORDLENGTH + 1)])
 	end
 
 end
@@ -299,12 +304,18 @@ end
 
 ######################## DRIVER ##########################
 
-key = "2b7e151628aed2a6abf7158809cf4f3c"
-plaintext = "A"
-while length(plaintext) < 2^10
-    global plaintext
-    plaintext = plaintext * plaintext
-end
+const key4 =    "2b7e151628aed2a6abf7158809cf4f3c"
+const plain4 =  "6bc1bee22e409f96e93d7e117393172a"
+const cipher4 = "3ad77bb40d7a3660a89ecaf32466ef97"
 
-CUDA.allowscalar(false)
-@btime AESECB(plaintext, key, true)
+println(AESECB(plain4, key4, true))
+
+# key = "2b7e151628aed2a6abf7158809cf4f3c"
+# plaintext = "A"
+# while length(plaintext) < 2^10
+#     global plaintext
+#     plaintext = plaintext * plaintext
+# end
+
+# CUDA.allowscalar(false)
+# @btime AESECB(plaintext, key, true)

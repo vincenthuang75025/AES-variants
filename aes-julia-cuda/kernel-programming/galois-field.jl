@@ -3,7 +3,7 @@
 # http://www.samiam.org/galois.html
 # by Sam Trenholme
 
-using 
+using CUDA
 
 # Log table using 0xe5 (229) as the generator
 global const LTABLE = CuArray([
@@ -40,6 +40,7 @@ global const LTABLE = CuArray([
 0x3b, 0x52, 0x6f, 0xf6, 0x2e, 0x89, 0xf7, 0xc0,
 0x68, 0x1b, 0x64, 0x04, 0x06, 0xbf, 0x83, 0x38
 ])
+global const LTABLE2 = cudaconvert(LTABLE)
 
 # Anti-log table
 global const ATABLE = CuArray([
@@ -76,13 +77,14 @@ global const ATABLE = CuArray([
 0x66, 0xb2, 0x76, 0x60, 0xda, 0xc5, 0xf3, 0xf6,
 0xaa, 0xcd, 0x9a, 0xa0, 0x75, 0x54, 0x0e, 0x01
 ])
+global const ATABLE2 = cudaconvert(ATABLE)
 
 # Addition over GF(2^8)
-function gadd(a::UInt8, b::UInt8)
+function gadd(a::UInt8, b::UInt8)::UInt8
   xor.(a , b)
 end
 
-function gadd(v::Array{UInt8})
+function gadd(v::CuArray{UInt8})
   s = v[1]
   for x in v[2:end]
     s = gadd(s, x)
@@ -91,15 +93,37 @@ function gadd(v::Array{UInt8})
 end
 
 # Subtraction over GF(2^8)
-function gsub(a::UInt8, b::UInt8)
+function gsub(a::UInt8, b::UInt8)::UInt8
   xor.(a , b)
 end
 
 # Fast multiplication using (anti-)logarithm table.
-function gmul(a::UInt8, b::UInt8)
+function gmul(a::UInt8, b::UInt8)::UInt8
 	loga = Int(LTABLE[Int(a) + 1])
 	logb = Int(LTABLE[Int(b) + 1])
 	s = ATABLE[mod(loga + logb, 255) + 1]
+	# Attempt to resist timing attacks.
+	# Return 0x00 if a is zero or if b is zero.
+	# Otherwise, return s.
+	z = 0x00
+	q = s
+	if a == 0x00
+		s = z
+	else
+		s = q
+	end
+	if b == 0x00
+		s = z
+	else
+		q = s
+	end
+	return s
+end
+
+function gmul2(a::UInt8, b::UInt8)::UInt8
+	loga = Int(LTABLE2[Int(a) + 1])
+	logb = Int(LTABLE2[Int(b) + 1])
+	s = ATABLE2[mod(loga + logb, 255) + 1]
 	# Attempt to resist timing attacks.
 	# Return 0x00 if a is zero or if b is zero.
 	# Otherwise, return s.
