@@ -51,12 +51,14 @@ global const INVSBOX = CuArray([
 0x17, 0x2b, 0x04, 0x7e, 0xba, 0x77, 0xd6, 0x26, 0xe1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0c, 0x7d
 ])
 
-global const MIXCOLUMNSMATRIX = cudaconvert(CuArray([
+global const MIXCOLUMNSMATRIX2 = CuArray([
 0x02, 0x03, 0x01, 0x01,
 0x01, 0x02, 0x03, 0x01,
 0x01, 0x01, 0x02, 0x03,
 0x03, 0x01, 0x01, 0x02
-]))
+])
+
+global const MIXCOLUMNSMATRIX = cudaconvert(MIXCOLUMNSMATRIX2)
 
 global const INVMIXCOLUMNSMATRIX = cudaconvert(CuArray([
 0x0e, 0x0b, 0x0d, 0x09,
@@ -120,20 +122,26 @@ function AESCipher(o::CuDeviceVector{UInt8, 1}, plain::CuDeviceVector{UInt8, 1},
 			end
 		end
 
- 		# # MixColumns
-		# for c=1:Nb
-		# 	for index=((c - 1) * Nb + 1):(c * Nb)
-		# 		offset = index - 1
-		# 		buffer[begin_ind + offset] = o[begin_ind + offset]
-		# 	end
-		# 	for r=1:Nb
-		# 		for j=((r - 1) * Nb + 1):(r * Nb)
-		# 			mij = MIXCOLUMNSMATRIX[j]
-		# 			indices_r = ((c - 1) * Nb + 1) + r - 1
-		# 			o[begin_ind + indices_r - 1] += gmul2(buffer[begin_ind + ((c - 1) * Nb + 1) - 1], mij)
-		# 		end
-		# 	end
-		# end
+ 		# MixColumns
+		for c=1:Nb
+			for index=((c - 1) * Nb + 1):(c * Nb)
+				buffer[begin_ind + index - 1] = o[begin_ind + index - 1]
+			end
+			for r=1:Nb
+				indices_r = ((c - 1) * Nb + 1) + r - 1
+				for j=((r - 1) * Nb + 1):(r * Nb)
+					mij = MIXCOLUMNSMATRIX[j]
+					nth_element = j - ((r - 1) * Nb + 1) # 0-indexed
+					aij = buffer[begin_ind + ((c - 1) * Nb + 1) - 1 + nth_element]
+					res = gmul2(aij, mij)
+					if j == ((r - 1) * Nb + 1)
+						o[begin_ind + indices_r - 1] = res
+					else
+						o[begin_ind + indices_r - 1] = gadd(o[begin_ind + indices_r - 1], res)
+					end
+				end
+			end
+		end
 
  		# AddRoundKey(state, w[(round * Nb * WORDLENGTH + 1):((round + 1) * Nb * WORDLENGTH)])
 		for i=begin_ind:end_ind
@@ -296,18 +304,23 @@ end
 
 ######################## DRIVER ##########################
 
-const key4 =    "2b7e151628aed2a6abf7158809cf4f3c"
-const plain4 =  "6bc1bee22e409f96e93d7e117393172a"
-const cipher4 = "3ad77bb40d7a3660a89ecaf32466ef97"
 
-println(AESECB(plain4, key4, true))
+# ###### Correctness Test
 
-# key = "2b7e151628aed2a6abf7158809cf4f3c"
-# plaintext = "A"
-# while length(plaintext) < 2^10
-#     global plaintext
-#     plaintext = plaintext * plaintext
-# end
+# const key4 =    "2b7e151628aed2a6abf7158809cf4f3c"
+# const plain4 =  "6bc1bee22e409f96e93d7e117393172a"
+# const cipher4 = "3ad77bb40d7a3660a89ecaf32466ef97"
 
-# CUDA.allowscalar(false)
-# @btime AESECB(plaintext, key, true)
+# println(AESECB(plain4, key4, true) == cipher4)
+
+
+###### Speed Test
+key = "2b7e151628aed2a6abf7158809cf4f3c"
+plaintext = "A"
+while length(plaintext) < 2^20
+    global plaintext
+    plaintext = plaintext * plaintext
+end
+
+CUDA.allowscalar(false)
+@btime AESECB(plaintext, key, true)
