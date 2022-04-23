@@ -249,10 +249,12 @@ function AESECB(blocks::String, key::String, encrypt::Bool)
         return blocks_cuarray, key_cuarray
     end
     cipher_cuarray = AESECB(blocks_cuarray, key_cuarray, encrypt)
-    cipher = CUDA.allowscalar() do
-        return bytes2hex(cipher_cuarray)
-    end
-    return cipher
+	return cipher_cuarray
+#	  # NOTE: converting a CUDA array back to a string is superrrr slow; only use this for correctness testing but not performance testing
+#     cipher = CUDA.allowscalar() do
+#         return bytes2hex(cipher_cuarray)
+#     end
+#     return cipher
 end
 
 function AESECB(blocks::CuArray{UInt8, 1}, key::CuArray{UInt8, 1}, encrypt::Bool)
@@ -267,15 +269,18 @@ function AESECB(blocks::CuArray{UInt8, 1}, key::CuArray{UInt8, 1}, encrypt::Bool
 	o = CuArray{UInt8, 1}(undef, length(blocks))
 	buffer = CuArray{UInt8, 1}(undef, length(blocks))
 
-    # hardcode threads: TODO fix later
-    @cuda threads=256 AESECB_do_blocks!(cudaconvert(o), noBlocks, cudaconvert(blocks), cudaconvert(key), encrypt, Nk, Nr, cudaconvert(w), cudaconvert(buffer))
+    # hardcode threads: TODO find out a good number
+	numblocks = ceil(Int, length(blocks) / BLOCK_BYTES / 256)
+    @cuda threads=256 blocks=numblocks AESECB_do_blocks!(cudaconvert(o), noBlocks, cudaconvert(blocks), cudaconvert(key), encrypt, Nk, Nr, cudaconvert(w), cudaconvert(buffer))
 
 	return o
 end
 
 function AESECB_do_blocks!(o::CuDeviceVector{UInt8, 1}, noBlocks::Int, blocks::CuDeviceVector{UInt8, 1}, key::CuDeviceVector{UInt8, 1}, encrypt::Bool, Nk::Int, Nr::Int, w::CuDeviceVector{UInt8, 1}, buffer::CuDeviceVector{UInt8, 1})
-    index = threadIdx().x    
-    stride = blockDim().x
+    # index = threadIdx().x    
+    # stride = blockDim().x
+	index = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    stride = gridDim().x * blockDim().x
     for i=index:stride:noBlocks
 		@assert(i >= 1)
 		indices_begin = (i - 1) * BLOCK_BYTES + 1
@@ -324,3 +329,4 @@ end
 
 CUDA.allowscalar(false)
 @btime AESECB(plaintext, key, true)
+# println(size(AESECB(plaintext, key, true)))
