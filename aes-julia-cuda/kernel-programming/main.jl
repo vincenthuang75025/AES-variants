@@ -110,34 +110,30 @@ function AESCipher(o::CuDeviceVector{UInt8, 1}, plain::CuDeviceVector{UInt8, 1},
 			cnt = 0
 			tmp = 0
 			for index=r:Nb:Nb*Nb
-				offset = index - 1
+				buffer[begin_ind + index - 1] = o[begin_ind + index - 1]
+			end
+			for index=r:Nb:Nb*Nb
 				p = mod(cnt + step - 1, Nb) + 1
-				if cnt == 0
-					tmp = o[begin_ind + offset]
-				end
-				if p == r
-					o[begin_ind + offset] = tmp
-				else
-					o[begin_ind + offset] = o[begin_ind + (p - 1) * Nb]
-				end
+				p_index = r + Nb * (p - 1)
+				o[begin_ind + index - 1] = buffer[begin_ind + p_index - 1]
 				cnt += 1
 			end
 		end
 
- 		# MixColumns
-		for c=1:Nb
-			for index=((c - 1) * Nb + 1):(c * Nb)
-				offset = index - 1
-				buffer[begin_ind + offset] = o[begin_ind + offset]
-			end
-			for r=1:Nb
-				for j=((r - 1) * Nb + 1):(r * Nb)
-					mij = MIXCOLUMNSMATRIX[j]
-					indices_r = ((c - 1) * Nb + 1) + r - 1
-					o[begin_ind + indices_r - 1] += gmul2(buffer[begin_ind + ((c - 1) * Nb + 1) - 1], mij)
-				end
-			end
-		end
+ 		# # MixColumns
+		# for c=1:Nb
+		# 	for index=((c - 1) * Nb + 1):(c * Nb)
+		# 		offset = index - 1
+		# 		buffer[begin_ind + offset] = o[begin_ind + offset]
+		# 	end
+		# 	for r=1:Nb
+		# 		for j=((r - 1) * Nb + 1):(r * Nb)
+		# 			mij = MIXCOLUMNSMATRIX[j]
+		# 			indices_r = ((c - 1) * Nb + 1) + r - 1
+		# 			o[begin_ind + indices_r - 1] += gmul2(buffer[begin_ind + ((c - 1) * Nb + 1) - 1], mij)
+		# 		end
+		# 	end
+		# end
 
  		# AddRoundKey(state, w[(round * Nb * WORDLENGTH + 1):((round + 1) * Nb * WORDLENGTH)])
 		for i=begin_ind:end_ind
@@ -157,16 +153,12 @@ function AESCipher(o::CuDeviceVector{UInt8, 1}, plain::CuDeviceVector{UInt8, 1},
 		cnt = 0
 		tmp = 0
 		for index=r:Nb:Nb*Nb
-			offset = index - 1
+			buffer[begin_ind + index - 1] = o[begin_ind + index - 1]
+		end
+		for index=r:Nb:Nb*Nb
 			p = mod(cnt + step - 1, Nb) + 1
-			if cnt == 0
-				tmp = o[begin_ind + offset]
-			end
-			if p == r
-				o[begin_ind + offset] = tmp
-			else
-				o[begin_ind + offset] = o[begin_ind + (p - 1) * Nb]
-			end
+			p_index = r + Nb * (p - 1)
+			o[begin_ind + index - 1] = buffer[begin_ind + p_index - 1]
 			cnt += 1
 		end
 	end
