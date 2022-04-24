@@ -24,9 +24,12 @@ function AESECB(blocks::Array{UInt8, 1}, key::Array{UInt8, 1}, encrypt::Bool)
 	noBlocks = paddedCheck(blocks, key)
 	o = Array{UInt8}(undef, length(blocks))
 
-	@threads for i=1:noBlocks
-		indices = blockIndices(blocks, i)
-		o[indices] = encrypt ? AESEncrypt(blocks[indices], key) : AESDecrypt(blocks[indices], key)
+	granularity = 100
+	@threads for i in 1:convert(Int, ceil( noBlocks/ granularity))
+		for j in ((i-1) * granularity + 1) : min(i * granularity, noBlocks)
+			indices = blockIndices(blocks, j)
+			o[indices] = encrypt ? AESEncrypt(blocks[indices], key) : AESDecrypt(blocks[indices], key)
+		end
 	end
 
 	return o
@@ -57,23 +60,45 @@ function AESCBC(blocks::Array{UInt8, 1}, key::Array{UInt8, 1},
 	if length(iv) != BLOCK_BYTES
 		error("IV does not have 16 bytes!")
 	end
+	intermediates = Array{UInt8}(undef, length(blocks))
 	o = Array{UInt8}(undef, length(blocks))
 	prev = iv
 
-	for i=1:noBlocks
-		indices = blockIndices(blocks, i)
-		if encrypt
-			curr = AESEncrypt(xor.(prev , blocks[indices]), key)
+	if encrypt
+		for i in 1:noBlocks
+			indices = blockIndices(blocks, i)
+			curr = AESEncrypt(xor.(prev, blocks[indices]), key)
 			o[indices] = curr
 			prev = curr
-		else
-			# decrypt
-			curr = xor.(AESDecrypt(blocks[indices], key) , prev)
-			o[indices] = curr
-			prev = blocks[indices]
+		end
+	else
+		# granularity = 100
+		# indices = blockIndices(blocks, 1)
+		# curr = xor.(AESDecrypt(blocks[indices], key), iv)
+		# o[indices] = curr
+		# @threads for i in 1:convert(Int, ceil( (noBlocks-1)/ granularity))
+		# 	for j in ((i-1) * granularity + 2) : min(i * granularity+1, noBlocks)
+		# 		indices = blockIndices(blocks, j)
+		# 		curr = xor.(AESDecrypt(blocks[indices], key), blocks[blockIndices(blocks, j-1)])
+		# 		o[indices] = curr
+		# 	end
+		# end
+		granularity = 64
+		@threads for i in 1:convert(Int, ceil( noBlocks/ granularity))
+			for j in ((i-1) * granularity + 1) : min(i * granularity, noBlocks)
+				indices = blockIndices(blocks, j)
+				intermediates[indices] = AESDecrypt(blocks[indices], key)
+			end
+		end
+		indices = blockIndices(blocks, 1)
+		o[indices] = xor.(intermediates[indices], iv)
+		for i in 1:convert(Int, ceil( (noBlocks-1)/ granularity))
+			for j in ((i-1) * granularity + 2) : min(i * granularity+1, noBlocks)
+				indices = blockIndices(blocks, j)
+				o[indices] = xor.(intermediates[indices], blocks[blockIndices(blocks, j-1)])
+			end
 		end
 	end
-
 	return o
 end
 

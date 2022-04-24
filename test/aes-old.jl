@@ -67,7 +67,7 @@ const cipher4 = "3ad77bb40d7a3660a89ecaf32466ef97"
 
 const long_plain4 = repeat(plain4, 2^16)
 
-@btime AESECB(long_plain4, key4, true)
+# @btime AESECB(long_plain4, key4, true)
 
 # AES CBC
 const iv5 =     "000102030405060708090a0b0c0d0e0f"
@@ -77,6 +77,9 @@ const cipher5 = "7649abac8119b246cee98e9b12e9197d"
 
 @test AESCBC(plain5, key5, iv5, true) == cipher5
 @test AESCBC(cipher5, key5, iv5, false) == plain5
+
+const long_cipher5 = repeat(cipher5, 2^16)
+@btime AESCBC(long_cipher5, key5, iv5, false)
 
 # AES CFB
 const iv6 =     iv5
