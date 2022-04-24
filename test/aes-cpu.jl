@@ -1,7 +1,7 @@
 using Test
 using BenchmarkTools
 
-include("../src/AES-old/aes-modes.jl")
+include("../src/AES-cpu/aes-modes.jl")
 
 # Test cases from FIPS 197
 @test gmul(0x57, 0x13) == 0xfe
