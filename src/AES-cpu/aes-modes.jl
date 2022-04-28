@@ -77,8 +77,8 @@ function AESCBC(blocks::Array{UInt8, 1}, key::Array{UInt8, 1},
 		o[indices] = curr
 		@threads for i in 1:convert(Int, ceil( (noBlocks-1)/ granularity))
 			for j in ((i-1) * granularity + 2) : min(i * granularity+1, noBlocks)
-				indices = blockIndices(blocks, j)
-				curr = xor.(AESDecrypt(blocks[indices], key), blocks[blockIndices(blocks, j-1)])
+				local indices = blockIndices(blocks, j)
+				local curr = xor.(AESDecrypt(blocks[indices], key), blocks[blockIndices(blocks, j-1)])
 				o[indices] = curr
 			end
 		end
