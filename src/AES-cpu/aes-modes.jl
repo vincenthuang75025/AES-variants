@@ -60,7 +60,6 @@ function AESCBC(blocks::Array{UInt8, 1}, key::Array{UInt8, 1},
 	if length(iv) != BLOCK_BYTES
 		error("IV does not have 16 bytes!")
 	end
-	intermediates = Array{UInt8}(undef, length(blocks))
 	o = Array{UInt8}(undef, length(blocks))
 	prev = iv
 
@@ -72,30 +71,15 @@ function AESCBC(blocks::Array{UInt8, 1}, key::Array{UInt8, 1},
 			prev = curr
 		end
 	else
-		# granularity = 100
-		# indices = blockIndices(blocks, 1)
-		# curr = xor.(AESDecrypt(blocks[indices], key), iv)
-		# o[indices] = curr
-		# @threads for i in 1:convert(Int, ceil( (noBlocks-1)/ granularity))
-		# 	for j in ((i-1) * granularity + 2) : min(i * granularity+1, noBlocks)
-		# 		indices = blockIndices(blocks, j)
-		# 		curr = xor.(AESDecrypt(blocks[indices], key), blocks[blockIndices(blocks, j-1)])
-		# 		o[indices] = curr
-		# 	end
-		# end
-		granularity = 64
-		@threads for i in 1:convert(Int, ceil( noBlocks/ granularity))
-			for j in ((i-1) * granularity + 1) : min(i * granularity, noBlocks)
-				indices = blockIndices(blocks, j)
-				intermediates[indices] = AESDecrypt(blocks[indices], key)
-			end
-		end
+		granularity = 48
 		indices = blockIndices(blocks, 1)
-		o[indices] = xor.(intermediates[indices], iv)
-		for i in 1:convert(Int, ceil( (noBlocks-1)/ granularity))
+		curr = xor.(AESDecrypt(blocks[indices], key), iv)
+		o[indices] = curr
+		@threads for i in 1:convert(Int, ceil( (noBlocks-1)/ granularity))
 			for j in ((i-1) * granularity + 2) : min(i * granularity+1, noBlocks)
 				indices = blockIndices(blocks, j)
-				o[indices] = xor.(intermediates[indices], blocks[blockIndices(blocks, j-1)])
+				curr = xor.(AESDecrypt(blocks[indices], key), blocks[blockIndices(blocks, j-1)])
+				o[indices] = curr
 			end
 		end
 	end
