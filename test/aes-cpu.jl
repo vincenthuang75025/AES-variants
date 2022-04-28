@@ -65,9 +65,10 @@ const cipher4 = "3ad77bb40d7a3660a89ecaf32466ef97"
 @test AESECB(plain4, key4, true) == cipher4
 @test AESECB(cipher4, key4, false) == plain4
 
-const long_plain4 = repeat(plain4, 2^16)
-
-@btime AESECB(long_plain4, key4, true)
+# const long_plain4 = repeat(plain4, 2^16)
+# @btime AESECB(long_plain4, key4, true)
+# const long_cipher4 = AESECB(long_plain4, key4, true)
+# @test AESECB(long_cipher4, key4, false) == long_plain4
 
 # AES CBC
 const iv5 =     "000102030405060708090a0b0c0d0e0f"
@@ -78,6 +79,11 @@ const cipher5 = "7649abac8119b246cee98e9b12e9197d"
 @test AESCBC(plain5, key5, iv5, true) == cipher5
 @test AESCBC(cipher5, key5, iv5, false) == plain5
 
+# const long_plain5 = repeat(plain5, 2^16)
+# @btime AESCBC(long_plain5, key5, iv5, false)
+# const long_cipher5 = AESCBC(long_plain5, key5, iv5, true)
+# @test AESCBC(long_cipher5, key5, iv5, false) == long_plain5
+
 # AES CFB
 const iv6 =     iv5
 const key6 =    key4
@@ -86,6 +92,11 @@ const cipher6 = "3b3fd92eb72dad20333449f8e83cfb4a"
 
 @test AESCFB(plain6, key6, iv6, true) == cipher6
 @test AESCFB(cipher6, key6, iv6, false) == plain6
+
+# const long_plain6 = repeat(plain6, 2^16)
+# @btime AESCFB(long_plain6, key6, iv6, false)
+# const long_cipher6 = AESCFB(long_plain6, key6, iv6, true)
+# @test AESCFB(long_cipher6, key6, iv6, false) == long_plain6
 
 # AES OFB
 const iv7 =     iv5
@@ -122,53 +133,58 @@ const cipher9 = string("036c5f64f290c0a3efed8bb8fc3a98a5", "40083d03ba096ab72543
 @test AESCTR(plain9, key9, iv9) == cipher9
 @test AESCTR(cipher9, key9, iv9) == plain9
 
-# Encrypt four random blocks using different modes of operation and
-# check if decryption recovers original blocks
-const BLOCK_BYTES = 16
-const ivrand =     rand(UInt8, BLOCK_BYTES)
-const keysrand =   rand(UInt8, div(128, 8))
-const keymrand =   rand(UInt8, div(192, 8))
-const keylrand =   rand(UInt8, div(256, 8))
-const plainrand =  rand(UInt8, 4 * BLOCK_BYTES)
-const plainrandl = rand(UInt8, 4 * BLOCK_BYTES + 1)
+# const long_plain9 = repeat(plain9, 2^14)
+# @btime AESCTR(long_plain9, key9, iv9)
+# const long_cipher9 = AESCTR(long_plain9, key9, iv9)
+# @test AESCTR(long_cipher9, key9, iv9) == long_plain9
 
-# AES ECB
-for key in (keysrand, keymrand, keylrand)
-	cipherrand = AESECB(plainrand, key, true)
-	@test cipherrand != plainrand
-	@test AESECB(cipherrand, key, false) == plainrand
-end
+# # Encrypt four random blocks using different modes of operation and
+# # check if decryption recovers original blocks
+# const BLOCK_BYTES = 16
+# const ivrand =     rand(UInt8, BLOCK_BYTES)
+# const keysrand =   rand(UInt8, div(128, 8))
+# const keymrand =   rand(UInt8, div(192, 8))
+# const keylrand =   rand(UInt8, div(256, 8))
+# const plainrand =  rand(UInt8, 4 * BLOCK_BYTES)
+# const plainrandl = rand(UInt8, 4 * BLOCK_BYTES + 1)
 
-# AES CBC
-for key in (keysrand, keymrand, keylrand)
-	cipherrand = AESCBC(plainrand, key, ivrand, true)
-	@test cipherrand != plainrand
-	@test AESCBC(cipherrand, key, ivrand, false) == plainrand
-end
+# # AES ECB
+# for key in (keysrand, keymrand, keylrand)
+# 	cipherrand = AESECB(plainrand, key, true)
+# 	@test cipherrand != plainrand
+# 	@test AESECB(cipherrand, key, false) == plainrand
+# end
 
-# AES CFB
-for key in (keysrand, keymrand, keylrand)
-	for plain in (plainrand, plainrandl)
-		cipherrand = AESCFB(plain, key, ivrand, true)
-		@test cipherrand != plain
-		@test AESCFB(cipherrand, key, ivrand, false) == plain
-	end
-end
+# # AES CBC
+# for key in (keysrand, keymrand, keylrand)
+# 	cipherrand = AESCBC(plainrand, key, ivrand, true)
+# 	@test cipherrand != plainrand
+# 	@test AESCBC(cipherrand, key, ivrand, false) == plainrand
+# end
 
-# AES OFB
-for key in (keysrand, keymrand, keylrand)
-	for plain in (plainrand, plainrandl)
-		cipherrand = AESOFB(plain, key, ivrand)
-		@test cipherrand != plain
-		@test AESOFB(cipherrand, key, ivrand) == plain
-	end
-end
+# # AES CFB
+# for key in (keysrand, keymrand, keylrand)
+# 	for plain in (plainrand, plainrandl)
+# 		cipherrand = AESCFB(plain, key, ivrand, true)
+# 		@test cipherrand != plain
+# 		@test AESCFB(cipherrand, key, ivrand, false) == plain
+# 	end
+# end
 
-# AES CTR
-for key in (keysrand, keymrand, keylrand)
-	for plain in (plainrand, plainrandl)
-		cipherrand = AESCTR(plain, key, ivrand)
-		@test cipherrand != plain
-		@test AESCTR(cipherrand, key, ivrand) == plain
-	end
-end
+# # AES OFB
+# for key in (keysrand, keymrand, keylrand)
+# 	for plain in (plainrand, plainrandl)
+# 		cipherrand = AESOFB(plain, key, ivrand)
+# 		@test cipherrand != plain
+# 		@test AESOFB(cipherrand, key, ivrand) == plain
+# 	end
+# end
+
+# # AES CTR
+# for key in (keysrand, keymrand, keylrand)
+# 	for plain in (plainrand, plainrandl)
+# 		cipherrand = AESCTR(plain, key, ivrand)
+# 		@test cipherrand != plain
+# 		@test AESCTR(cipherrand, key, ivrand) == plain
+# 	end
+# end

@@ -24,9 +24,12 @@ function AESECB(blocks::Array{UInt8, 1}, key::Array{UInt8, 1}, encrypt::Bool)
 	noBlocks = paddedCheck(blocks, key)
 	o = Array{UInt8}(undef, length(blocks))
 
-	@threads for i=1:noBlocks
-		indices = blockIndices(blocks, i)
-		o[indices] = encrypt ? AESEncrypt(blocks[indices], key) : AESDecrypt(blocks[indices], key)
+	granularity = 100
+	@threads for i in 1:convert(Int, ceil( noBlocks/ granularity))
+		for j in ((i-1) * granularity + 1) : min(i * granularity, noBlocks)
+			indices = blockIndices(blocks, j)
+			o[indices] = encrypt ? AESEncrypt(blocks[indices], key) : AESDecrypt(blocks[indices], key)
+		end
 	end
 
 	return o
@@ -60,20 +63,26 @@ function AESCBC(blocks::Array{UInt8, 1}, key::Array{UInt8, 1},
 	o = Array{UInt8}(undef, length(blocks))
 	prev = iv
 
-	for i=1:noBlocks
-		indices = blockIndices(blocks, i)
-		if encrypt
-			curr = AESEncrypt(xor.(prev , blocks[indices]), key)
+	if encrypt
+		for i in 1:noBlocks
+			indices = blockIndices(blocks, i)
+			curr = AESEncrypt(xor.(prev, blocks[indices]), key)
 			o[indices] = curr
 			prev = curr
-		else
-			# decrypt
-			curr = xor.(AESDecrypt(blocks[indices], key) , prev)
-			o[indices] = curr
-			prev = blocks[indices]
+		end
+	else
+		granularity = 48
+		indices = blockIndices(blocks, 1)
+		curr = xor.(AESDecrypt(blocks[indices], key), iv)
+		o[indices] = curr
+		@threads for i in 1:convert(Int, ceil( (noBlocks-1)/ granularity))
+			for j in ((i-1) * granularity + 2) : min(i * granularity+1, noBlocks)
+				local indices = blockIndices(blocks, j)
+				local curr = xor.(AESDecrypt(blocks[indices], key), blocks[blockIndices(blocks, j-1)])
+				o[indices] = curr
+			end
 		end
 	end
-
 	return o
 end
 
@@ -102,14 +111,22 @@ function AESCFB(blocks::Array{UInt8, 1}, key::Array{UInt8, 1},
 	o = Array{UInt8}(undef, length(blocks))
 	curr = iv
 
-	for i=1:noBlocks
-		indices = blockIndices(blocks, i)
-		o[indices] = xor.(AESEncrypt(curr, key)[1:length(indices)] , blocks[indices])
-		if encrypt
+	if encrypt
+		for i=1:noBlocks
+			indices = blockIndices(blocks, i)
+			o[indices] = xor.(AESEncrypt(curr, key)[1:length(indices)], blocks[indices])
 			curr = o[indices]
-		else
-			# decrypt
-			curr = blocks[indices]
+		end
+	else
+		granularity = 48
+		indices = blockIndices(blocks, 1)
+		o[indices] = xor.(AESEncrypt(curr, key)[1:length(indices)], blocks[indices])
+		@threads for i in 1:convert(Int, ceil( (noBlocks-1)/ granularity))
+			for j in ((i-1) * granularity + 2) : min(i * granularity+1, noBlocks)
+				local indices = blockIndices(blocks, j)
+				local curr = xor.(AESEncrypt(blocks[blockIndices(blocks, j-1)], key)[1:length(indices)], blocks[indices])
+				o[indices] = curr
+			end
 		end
 	end
 
@@ -162,24 +179,28 @@ end
 function AESCTR(blocks::Array{UInt8, 1}, key::Array{UInt8, 1},
 	iv::Array{UInt8, 1})
 	noBlocks = keyStreamCheck(blocks, key, iv)
-	curr = copy(iv)
+	curr_base = iv[end] + 256 * iv[end-1] + 256^2 * iv[end-2] + 256^3 * iv[end-3] + 256^4 * iv[end-4] + 256^5 * iv[end-5] + 256^6 * iv[end-6] + 256^7 * iv[end-7]
 	o = Array{UInt8}(undef, length(blocks))
 
-	for i=1:noBlocks
-		indices = blockIndices(blocks, i)
-		eb = AESEncrypt(curr, key)
-		o[indices] = xor.(eb[1:length(indices)] , blocks[indices])
-		for bi=reverse((length(curr) - 7):length(curr))
-			tmp = curr[bi]
-			curr[bi] = UInt8(mod(Int(tmp) + 1, 256))
-			if curr[bi] > tmp
-				# no byte overflow
-				break
-			end
+	granularity = 36
+	@threads for i in 1:convert(Int, ceil( noBlocks/ granularity))
+		for j in ((i-1) * granularity + 1) : min(i * granularity, noBlocks)
+			local indices = blockIndices(blocks, j)
+			local eb = AESEncrypt(vcat(iv[1:8], to_bytes(curr_base + j-1)), key)
+			o[indices] = xor.(eb[1:length(indices)] , blocks[indices])
 		end
 	end
 
 	return o
+end
+
+function to_bytes(n::Integer; len=8)
+	bytes = Array{UInt8}(undef, len)
+	for byte in reverse(1:len)
+		bytes[byte] = n & 0xff
+		n >>= 8
+	end
+	return bytes
 end
 
 # Checks whether the parameters are OK for ECB/CBC mode.
