@@ -87,12 +87,20 @@ function AESEncrypt(plain::Array{UInt8, 1}, key::Array{UInt8, 1})
 	return AESCipher(plain, w, Nr)
 end
 
+function AESEncrypt2(plain::Array{UInt8, 1}, w::Array{UInt8, 1}, Nr::Int)
+	return AESCipher(plain, w, Nr)
+end
+
 # Decrypts the given ciphertext block using the given key
 # and returns the resulting plaintext.
 # Both the ciphertext and key are arrays holding bytes of type UInt8.
 # The returned plaintext is an array holding bytes of type UInt8.
 function AESDecrypt(cipher::Array{UInt8, 1}, key::Array{UInt8, 1})
 	(w, Nr) = AEScrypt(cipher, key)
+	return AESInvCipher(cipher, w, Nr)
+end
+
+function AESDecrypt2(cipher::Array{UInt8, 1}, w::Array{UInt8, 1}, Nr::Int)
 	return AESInvCipher(cipher, w, Nr)
 end
 
@@ -182,10 +190,10 @@ function AESCipher(inBytes::Array{UInt8, 1}, w::Array{UInt8, 1}, Nr::Int)
 		SubBytes(state)
 		ShiftRows(state)
 		MixColumns(state, cache)
-		# range = (round * 16 + 1):(round  * 16 + 16)
+		range = (round * 16 + 1):(round  * 16 + 16)
 		for j in 1:16
-			# state[j] = xor(state[j], w[range[j]])
-			state[j] = xor(state[j], w[round * 16 + j])
+			state[j] = xor(state[j], w[range[j]])
+			# $state[j] = xor($state[j], $w[round * 16 + j])
 		end
 	end
 
