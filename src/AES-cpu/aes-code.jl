@@ -250,11 +250,44 @@ end
 function ShiftRowsGen(a::Array{UInt8, 1}, inv::Bool)
 	# permute columns in _last three_ rows
 	# note that a column is actually a row in memory
-	for r=2:Nb
-		indices = columnIndices(r)
-		step = inv ? Nb + 2 - r : r
-		p = map(c -> mod(c + step - 1, Nb) + 1, 0:(Nb-1))
-		a[indices] = a[indices][p]
+	if inv
+		tmp1 = a[14]
+		a[14] = a[10]
+		a[10] = a[6]
+		a[6] = a[2]
+		a[2] = tmp1
+
+		tmp1 = a[3]
+		a[3] = a[11]
+		a[11] = tmp1
+		tmp1 = a[7]
+		a[7] = a[15]
+		a[15] = tmp1
+
+		tmp1 = a[4]
+		a[4] = a[8]
+		a[8] = a[12]
+		a[12] = a[16]
+		a[16] = tmp1
+	else
+		tmp1 = a[2]
+		a[2] = a[6]
+		a[6] = a[10]
+		a[10] = a[14]
+		a[14] = tmp1
+
+		tmp1 = a[3]
+		a[3] = a[11]
+		a[11] = tmp1
+		tmp1 = a[7]
+		a[7] = a[15]
+		a[15] = tmp1
+
+		tmp1 = a[16]
+		a[16] = a[12]
+		a[12] = a[8]
+		a[8] = a[4]
+		a[4] = tmp1
 	end
 	return a
 end
