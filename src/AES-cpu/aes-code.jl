@@ -87,12 +87,20 @@ function AESEncrypt(plain::Array{UInt8, 1}, key::Array{UInt8, 1})
 	return AESCipher(plain, w, Nr)
 end
 
+function AESEncrypt2(plain::Array{UInt8, 1}, w::Array{UInt8, 1}, Nr::Int)
+	return AESCipher(plain, w, Nr)
+end
+
 # Decrypts the given ciphertext block using the given key
 # and returns the resulting plaintext.
 # Both the ciphertext and key are arrays holding bytes of type UInt8.
 # The returned plaintext is an array holding bytes of type UInt8.
 function AESDecrypt(cipher::Array{UInt8, 1}, key::Array{UInt8, 1})
 	(w, Nr) = AEScrypt(cipher, key)
+	return AESInvCipher(cipher, w, Nr)
+end
+
+function AESDecrypt2(cipher::Array{UInt8, 1}, w::Array{UInt8, 1}, Nr::Int)
 	return AESInvCipher(cipher, w, Nr)
 end
 
@@ -172,18 +180,30 @@ function AESCipher(inBytes::Array{UInt8, 1}, w::Array{UInt8, 1}, Nr::Int)
 	@assert(length(w) == (WORDLENGTH * Nb * (Nr + 1)))
 
 	state = copy(inBytes)
-	AddRoundKey(state, w[1:(Nb * WORDLENGTH)])
+	for j in 1:16
+		state[j] = xor(state[j], w[j])
+	end
+
+	cache = Array{UInt8}(undef, Nb)
 
 	for round=1:(Nr-1)
 		SubBytes(state)
 		ShiftRows(state)
-		MixColumns(state)
-		AddRoundKey(state, w[(round * Nb * WORDLENGTH + 1):((round + 1) * Nb * WORDLENGTH)])
+		MixColumns(state, cache)
+		range = (round * 16 + 1):(round  * 16 + 16)
+		for j in 1:16
+			state[j] = xor(state[j], w[range[j]])
+			# $state[j] = xor($state[j], $w[round * 16 + j])
+		end
 	end
 
 	SubBytes(state)
 	ShiftRows(state)
-	AddRoundKey(state, w[(Nr * Nb * WORDLENGTH + 1):((Nr + 1) * Nb * WORDLENGTH)])
+	# AddRoundKey(state, w[(Nr * Nb * WORDLENGTH + 1):((Nr + 1) * Nb * WORDLENGTH)])
+	range = (Nr * 16 + 1):(Nr * 16 + 16)
+	for j in 1:16
+		state[j] = xor(state[j], w[range[j]])
+	end
 
 	return state
 end
@@ -194,18 +214,31 @@ function AESInvCipher(inBytes::Array{UInt8, 1}, w::Array{UInt8, 1}, Nr::Int)
 	@assert(length(w) == (WORDLENGTH * Nb * (Nr + 1)))
 
 	state = copy(inBytes)
-	AddRoundKey(state, w[(Nr * Nb * WORDLENGTH + 1):((Nr + 1) * Nb * WORDLENGTH)])
+	# AddRoundKey(state, w[(Nr * Nb * WORDLENGTH + 1):((Nr + 1) * Nb * WORDLENGTH)])
+	range = (Nr * 16 + 1):(Nr * 16 + 16)
+	for j in 1:16
+		state[j] = xor(state[j], w[range[j]])
+	end
+
+	cache = Array{UInt8}(undef, Nb)
 
 	for round=(Nr-1):-1:1
 		InvShiftRows(state)
 		InvSubBytes(state)
-		AddRoundKey(state, w[(round * Nb * WORDLENGTH + 1):((round + 1) * Nb * WORDLENGTH)])
-		InvMixColumns(state)
+		# AddRoundKey(state, w[(round * Nb * WORDLENGTH + 1):((round + 1) * Nb * WORDLENGTH)])
+		range = (round * 16 + 1):(round * 16 + 16)
+		for j in 1:16
+			state[j] = xor(state[j], w[range[j]])
+		end
+		InvMixColumns(state, cache)
 	end
 
 	InvShiftRows(state)
 	InvSubBytes(state)
-	AddRoundKey(state, w[1:(Nb * WORDLENGTH)])
+	# AddRoundKey(state, w[1:(Nb * WORDLENGTH)])
+	for j in 1:16
+		state[j] = xor(state[j], w[j])
+	end
 
 	return state
 end
@@ -246,40 +279,88 @@ end
 function ShiftRowsGen(a::Array{UInt8, 1}, inv::Bool)
 	# permute columns in _last three_ rows
 	# note that a column is actually a row in memory
-	for r=2:Nb
-		indices = columnIndices(r)
-		step = inv ? Nb + 2 - r : r
-		p = map(c -> mod(c + step - 1, Nb) + 1, 0:(Nb-1))
-		a[indices] = a[indices][p]
+	if inv
+		tmp1 = a[14]
+		a[14] = a[10]
+		a[10] = a[6]
+		a[6] = a[2]
+		a[2] = tmp1
+
+		tmp1 = a[3]
+		a[3] = a[11]
+		a[11] = tmp1
+		tmp1 = a[7]
+		a[7] = a[15]
+		a[15] = tmp1
+
+		tmp1 = a[4]
+		a[4] = a[8]
+		a[8] = a[12]
+		a[12] = a[16]
+		a[16] = tmp1
+	else
+		tmp1 = a[2]
+		a[2] = a[6]
+		a[6] = a[10]
+		a[10] = a[14]
+		a[14] = tmp1
+
+		tmp1 = a[3]
+		a[3] = a[11]
+		a[11] = tmp1
+		tmp1 = a[7]
+		a[7] = a[15]
+		a[15] = tmp1
+
+		tmp1 = a[16]
+		a[16] = a[12]
+		a[12] = a[8]
+		a[8] = a[4]
+		a[4] = tmp1
 	end
 	return a
 end
 
-function MixColumns(a::Array{UInt8, 1})
-	MixColumnsGen(a, false)
+function MixColumns(a::Array{UInt8, 1}, cache)
+	MixColumnsGen(a, false, cache)
 end
 
-function InvMixColumns(a::Array{UInt8, 1})
-	MixColumnsGen(a, true)
+function InvMixColumns(a::Array{UInt8, 1}, cache)
+	MixColumnsGen(a, true, cache)
 end
 
-function MixColumnsGen(a::Array{UInt8, 1}, inv::Bool)
+function MixColumnsGen(a::Array{UInt8, 1}, inv::Bool, cache)
 	# note that columns are actually rows in memory
 	matrix = inv ? INVMIXCOLUMNSMATRIX : MIXCOLUMNSMATRIX
-	for c=1:Nb
-		indices = rowIndices(c)
-		ai = copy(a[indices])
-		@assert(length(ai) == Nb)
-		# Matrix multiplication with Galois field operations
-		for r=1:Nb
-			mi = matrix[rowIndices(r)]
-			a[indices[r]] = gadd(map(gmul, ai, mi))
-		end
+	# for c=1:Nb
+	# 	indices = rowIndices(c)
+	# 	for i = 1 : Nb
+	# 		cache[i] = a[indices[i]]
+	# 	end
+	# 	# @assert(length(cache) == Nb)
+	# 	# Matrix multiplication with Galois field operations
+	# 	for r=1:Nb
+	# 		mi = matrix[rowIndices(r)]
+	# 		a[indices[r]] = gadd(map(gmul, cache, mi))
+	# 	end
+	# end
+	for j in 1:4
+		cache[1] = gmul(a[4j-3], matrix[1]) ⊻ gmul(a[4j-2], matrix[2]) ⊻ gmul(a[4j-1], matrix[3]) ⊻ gmul(a[4j], matrix[4])
+		cache[2] = gmul(a[4j-3], matrix[5]) ⊻ gmul(a[4j-2], matrix[6]) ⊻ gmul(a[4j-1], matrix[7]) ⊻ gmul(a[4j], matrix[8])
+		cache[3] = gmul(a[4j-3], matrix[9]) ⊻ gmul(a[4j-2], matrix[10]) ⊻ gmul(a[4j-1], matrix[11]) ⊻ gmul(a[4j], matrix[12])
+		cache[4] = gmul(a[4j-3], matrix[13]) ⊻ gmul(a[4j-2], matrix[14]) ⊻ gmul(a[4j-1], matrix[15]) ⊻ gmul(a[4j], matrix[16])
+		a[4j-3] = cache[1]
+		a[4j-2] = cache[2]
+		a[4j-1] = cache[3]
+		a[4j  ] = cache[4]
 	end
 	return a
 end
 
 function AddRoundKey(s::Array{UInt8, 1}, w::Array{UInt8, 1})
-	@assert(length(w) == (WORDLENGTH * Nb) && (WORDLENGTH == Nb))
-	return map!(gadd, s, s, w)
+	# @assert(length(w) == (WORDLENGTH * Nb) && (WORDLENGTH == Nb))
+	# return map!(gadd, s, s, w)
+	for i = 1 : 16
+		s[i] = xor(s[i], w[i])
+	end
 end
