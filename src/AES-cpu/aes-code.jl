@@ -174,10 +174,12 @@ function AESCipher(inBytes::Array{UInt8, 1}, w::Array{UInt8, 1}, Nr::Int)
 	state = copy(inBytes)
 	AddRoundKey(state, w[1:(Nb * WORDLENGTH)])
 
+	cache = Array{UInt8}(undef, Nb)
+
 	for round=1:(Nr-1)
 		SubBytes(state)
 		ShiftRows(state)
-		MixColumns(state)
+		MixColumns(state, cache)
 		AddRoundKey(state, w[(round * Nb * WORDLENGTH + 1):((round + 1) * Nb * WORDLENGTH)])
 	end
 
@@ -196,11 +198,13 @@ function AESInvCipher(inBytes::Array{UInt8, 1}, w::Array{UInt8, 1}, Nr::Int)
 	state = copy(inBytes)
 	AddRoundKey(state, w[(Nr * Nb * WORDLENGTH + 1):((Nr + 1) * Nb * WORDLENGTH)])
 
+	cache = Array{UInt8}(undef, Nb)
+
 	for round=(Nr-1):-1:1
 		InvShiftRows(state)
 		InvSubBytes(state)
 		AddRoundKey(state, w[(round * Nb * WORDLENGTH + 1):((round + 1) * Nb * WORDLENGTH)])
-		InvMixColumns(state)
+		InvMixColumns(state, cache)
 	end
 
 	InvShiftRows(state)
@@ -255,26 +259,38 @@ function ShiftRowsGen(a::Array{UInt8, 1}, inv::Bool)
 	return a
 end
 
-function MixColumns(a::Array{UInt8, 1})
-	MixColumnsGen(a, false)
+function MixColumns(a::Array{UInt8, 1}, cache)
+	MixColumnsGen(a, false, cache)
 end
 
-function InvMixColumns(a::Array{UInt8, 1})
-	MixColumnsGen(a, true)
+function InvMixColumns(a::Array{UInt8, 1}, cache)
+	MixColumnsGen(a, true, cache)
 end
 
-function MixColumnsGen(a::Array{UInt8, 1}, inv::Bool)
+function MixColumnsGen(a::Array{UInt8, 1}, inv::Bool, cache)
 	# note that columns are actually rows in memory
 	matrix = inv ? INVMIXCOLUMNSMATRIX : MIXCOLUMNSMATRIX
-	for c=1:Nb
-		indices = rowIndices(c)
-		ai = copy(a[indices])
-		@assert(length(ai) == Nb)
-		# Matrix multiplication with Galois field operations
-		for r=1:Nb
-			mi = matrix[rowIndices(r)]
-			a[indices[r]] = gadd(map(gmul, ai, mi))
-		end
+	# for c=1:Nb
+	# 	indices = rowIndices(c)
+	# 	for i = 1 : Nb
+	# 		cache[i] = a[indices[i]]
+	# 	end
+	# 	# @assert(length(cache) == Nb)
+	# 	# Matrix multiplication with Galois field operations
+	# 	for r=1:Nb
+	# 		mi = matrix[rowIndices(r)]
+	# 		a[indices[r]] = gadd(map(gmul, cache, mi))
+	# 	end
+	# end
+	for j in 1:4
+		cache[1] = gmul(a[4j-3], matrix[1]) ⊻ gmul(a[4j-2], matrix[2]) ⊻ gmul(a[4j-1], matrix[3]) ⊻ gmul(a[4j], matrix[4])
+		cache[2] = gmul(a[4j-3], matrix[5]) ⊻ gmul(a[4j-2], matrix[6]) ⊻ gmul(a[4j-1], matrix[7]) ⊻ gmul(a[4j], matrix[8])
+		cache[3] = gmul(a[4j-3], matrix[9]) ⊻ gmul(a[4j-2], matrix[10]) ⊻ gmul(a[4j-1], matrix[11]) ⊻ gmul(a[4j], matrix[12])
+		cache[4] = gmul(a[4j-3], matrix[13]) ⊻ gmul(a[4j-2], matrix[14]) ⊻ gmul(a[4j-1], matrix[15]) ⊻ gmul(a[4j], matrix[16])
+		a[4j-3] = cache[1]
+		a[4j-2] = cache[2]
+		a[4j-1] = cache[3]
+		a[4j  ] = cache[4]
 	end
 	return a
 end
