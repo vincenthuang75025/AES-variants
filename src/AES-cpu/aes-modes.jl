@@ -25,10 +25,12 @@ function AESECB(blocks::Array{UInt8, 1}, key::Array{UInt8, 1}, encrypt::Bool)
 	o = Array{UInt8}(undef, length(blocks))
 
 	granularity = 100
+	(Nk, Nr) = AESParameters(key)
+	w = KeyExpansion(key, Nk, Nr)
 	@threads for i in 1:convert(Int, ceil( noBlocks/ granularity))
 		for j in ((i-1) * granularity + 1) : min(i * granularity, noBlocks)
-			indices = blockIndices(blocks, j)
-			o[indices] = encrypt ? AESEncrypt(blocks[indices], key) : AESDecrypt(blocks[indices], key)
+			local indices = blockIndices(blocks, j)
+			o[indices] = encrypt ? AESEncrypt2(blocks[indices], w, Nr) : AESDecrypt2(blocks[indices], w, Nr)
 		end
 	end
 
