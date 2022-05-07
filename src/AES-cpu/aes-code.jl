@@ -172,7 +172,9 @@ function AESCipher(inBytes::Array{UInt8, 1}, w::Array{UInt8, 1}, Nr::Int)
 	@assert(length(w) == (WORDLENGTH * Nb * (Nr + 1)))
 
 	state = copy(inBytes)
-	AddRoundKey(state, w[1:(Nb * WORDLENGTH)])
+	for j in 1:16
+		state[j] = xor(state[j], w[j])
+	end
 
 	cache = Array{UInt8}(undef, Nb)
 
@@ -180,12 +182,20 @@ function AESCipher(inBytes::Array{UInt8, 1}, w::Array{UInt8, 1}, Nr::Int)
 		SubBytes(state)
 		ShiftRows(state)
 		MixColumns(state, cache)
-		AddRoundKey(state, w[(round * Nb * WORDLENGTH + 1):((round + 1) * Nb * WORDLENGTH)])
+		# range = (round * 16 + 1):(round  * 16 + 16)
+		for j in 1:16
+			# state[j] = xor(state[j], w[range[j]])
+			state[j] = xor(state[j], w[round * 16 + j])
+		end
 	end
 
 	SubBytes(state)
 	ShiftRows(state)
-	AddRoundKey(state, w[(Nr * Nb * WORDLENGTH + 1):((Nr + 1) * Nb * WORDLENGTH)])
+	# AddRoundKey(state, w[(Nr * Nb * WORDLENGTH + 1):((Nr + 1) * Nb * WORDLENGTH)])
+	range = (Nr * 16 + 1):(Nr * 16 + 16)
+	for j in 1:16
+		state[j] = xor(state[j], w[range[j]])
+	end
 
 	return state
 end
@@ -196,20 +206,31 @@ function AESInvCipher(inBytes::Array{UInt8, 1}, w::Array{UInt8, 1}, Nr::Int)
 	@assert(length(w) == (WORDLENGTH * Nb * (Nr + 1)))
 
 	state = copy(inBytes)
-	AddRoundKey(state, w[(Nr * Nb * WORDLENGTH + 1):((Nr + 1) * Nb * WORDLENGTH)])
+	# AddRoundKey(state, w[(Nr * Nb * WORDLENGTH + 1):((Nr + 1) * Nb * WORDLENGTH)])
+	range = (Nr * 16 + 1):(Nr * 16 + 16)
+	for j in 1:16
+		state[j] = xor(state[j], w[range[j]])
+	end
 
 	cache = Array{UInt8}(undef, Nb)
 
 	for round=(Nr-1):-1:1
 		InvShiftRows(state)
 		InvSubBytes(state)
-		AddRoundKey(state, w[(round * Nb * WORDLENGTH + 1):((round + 1) * Nb * WORDLENGTH)])
+		# AddRoundKey(state, w[(round * Nb * WORDLENGTH + 1):((round + 1) * Nb * WORDLENGTH)])
+		range = (round * 16 + 1):(round * 16 + 16)
+		for j in 1:16
+			state[j] = xor(state[j], w[range[j]])
+		end
 		InvMixColumns(state, cache)
 	end
 
 	InvShiftRows(state)
 	InvSubBytes(state)
-	AddRoundKey(state, w[1:(Nb * WORDLENGTH)])
+	# AddRoundKey(state, w[1:(Nb * WORDLENGTH)])
+	for j in 1:16
+		state[j] = xor(state[j], w[j])
+	end
 
 	return state
 end
@@ -329,6 +350,9 @@ function MixColumnsGen(a::Array{UInt8, 1}, inv::Bool, cache)
 end
 
 function AddRoundKey(s::Array{UInt8, 1}, w::Array{UInt8, 1})
-	@assert(length(w) == (WORDLENGTH * Nb) && (WORDLENGTH == Nb))
-	return map!(gadd, s, s, w)
+	# @assert(length(w) == (WORDLENGTH * Nb) && (WORDLENGTH == Nb))
+	# return map!(gadd, s, s, w)
+	for i = 1 : 16
+		s[i] = xor(s[i], w[i])
+	end
 end
