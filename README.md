@@ -1,1 +1,1 @@
-# Parallel AES Implementation in Julia
+# Parallel AES Implementation
